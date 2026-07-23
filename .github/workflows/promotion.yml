@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   required:
-    name: required
+    name: promotion / required
     runs-on: ubuntu-latest
     steps:
       - name: Require exact current dev source
