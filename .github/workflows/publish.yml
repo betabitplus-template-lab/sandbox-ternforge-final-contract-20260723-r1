@@ -35,11 +35,11 @@ jobs:
               -f ref="refs/tags/${tag}" -f sha="$promoted_sha" --silent
           fi
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            release_target="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            release_target="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
             test "$release_target" = "$promoted_sha"
           else
-            gh release create "$tag" --verify-tag --target "$promoted_sha" --title "$tag" --generate-notes
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --target "$promoted_sha" --title "$tag" --generate-notes
           fi
 
           final_tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
