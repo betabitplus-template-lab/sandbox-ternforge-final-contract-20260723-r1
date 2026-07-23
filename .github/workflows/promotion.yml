@@ -1,0 +1,41 @@
+name: promotion
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  required:
+    name: required
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exact current dev source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$HEAD_REPOSITORY" = "$BASE_REPOSITORY"
+          test "$HEAD_BRANCH" = dev
+          current_dev="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/dev" --jq .object.sha)"
+          test "$PR_HEAD_SHA" = "$current_dev"
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require prospective main tree to equal dev tree
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          merge_tree="$(git merge-tree --write-tree --no-messages origin/main HEAD)"
+          dev_tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$merge_tree" = "$dev_tree"

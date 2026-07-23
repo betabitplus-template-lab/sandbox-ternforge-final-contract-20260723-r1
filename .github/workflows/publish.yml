@@ -1,0 +1,47 @@
+name: publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify promotion and publish exact promoted commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          parent_count="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${main_sha}" --jq '.parents | length')"
+          test "$parent_count" = 2
+          promoted_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${main_sha}" --jq .parents[1].sha)"
+          main_tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${main_sha}" --jq .tree.sha)"
+          promoted_tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${promoted_sha}" --jq .tree.sha)"
+          test "$main_tree" = "$promoted_tree"
+
+          version="$(gh api "repos/${GITHUB_REPOSITORY}/contents/version.txt?ref=${promoted_sha}" --jq .content | base64 --decode | tr -d '\n')"
+          manifest="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.release-please-manifest.json?ref=${promoted_sha}" --jq .content | base64 --decode | jq -er '.["."]')"
+          test "$version" = "$manifest"
+          tag="v${version}"
+
+          if tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha 2>/dev/null)"; then
+            test "$tag_sha" = "$promoted_sha"
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" -f sha="$promoted_sha" --silent
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            release_target="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
+            test "$release_target" = "$promoted_sha"
+          else
+            gh release create "$tag" --verify-tag --target "$promoted_sha" --title "$tag" --generate-notes
+          fi
+
+          final_tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha)"
+          test "$final_tag_sha" = "$promoted_sha"
+          printf 'tag=%s promoted_sha=%s main_sha=%s\n' "$tag" "$promoted_sha" "$main_sha" >> "$GITHUB_STEP_SUMMARY"
